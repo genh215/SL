@@ -2,11 +2,12 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no">
 <title>Steam Locomotive</title>
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;touch-action:none}
+*{box-sizing:border-box;touch-action:none}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;touch-action:none;overscroll-behavior:none}
+body{position:fixed;inset:0;max-width:100vw;height:100vh;height:100dvh;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 body{background:#82c9ef;font-family:system-ui,sans-serif}
 .scene{
   position:relative;width:100%;height:100%;
@@ -17,7 +18,7 @@ body{background:#82c9ef;font-family:system-ui,sans-serif}
 .c1{width:150px;height:42px;left:5%;top:10%}
 .c2{width:105px;height:34px;right:8%;top:17%}
 .track{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.engine{z-index:1;isolation:isolate;position:relative;width:min(88vw,58vh,460px);aspect-ratio:4/5;margin-bottom:0}
+.engine{z-index:1;isolation:isolate;position:relative;width:min(88vw,58vh,460px);width:min(88vw,58dvh,460px);aspect-ratio:4/5;margin-bottom:0}
 .body{
   position:absolute;z-index:2;left:12%;right:12%;top:14%;bottom:22%;
   border-radius:24% 24% 15% 15%;background:#177bc1;border:8px solid #173949;
@@ -118,7 +119,7 @@ body{background:#82c9ef;font-family:system-ui,sans-serif}
       <div class="nose"></div><div class="cheek l"></div><div class="cheek r"></div>
       <div class="mouth"></div>
     </div>
-    <div class="wheel w1"></div><div class="wheel w2"></div><div class="wheel w3"></div>
+    <div class="wheel w1" role="button" tabindex="0" aria-label="Start or stop locomotive" aria-pressed="false"></div><div class="wheel w2"></div><div class="wheel w3" role="button" tabindex="0" aria-label="Start or stop locomotive" aria-pressed="false"></div>
     <div class="chassis"></div>
     <div class="buffer l"></div><div class="buffer r"></div>
   </div>
@@ -155,7 +156,7 @@ function draw(){
 draw();
 
 function randomGoggle(){
-  if(Date.now()-lastInput>1200){
+  if(Date.now()-lastInput>2500){
     const f=document.querySelector(".face").getBoundingClientRect();
     const choices=[
       [0.05,.42],[.95,.42],[.50,.08],[.50,.88],
@@ -164,21 +165,44 @@ function randomGoggle(){
     const q=choices[Math.floor(Math.random()*choices.length)];
     target.x=f.left+f.width*q[0];target.y=f.top+f.height*q[1];
     setTimeout(()=>{
-      if(Date.now()-lastInput>1200){
+      if(Date.now()-lastInput>2500){
         target.x=f.left+f.width*(.15+Math.random()*.7);
         target.y=f.top+f.height*(.12+Math.random()*.72);
       }
     },120+Math.random()*180);
   }
-  setTimeout(randomGoggle,450+Math.random()*800);
+  setTimeout(randomGoggle,1800+Math.random()*1400);
 }
-setTimeout(randomGoggle,1300);
+setTimeout(randomGoggle,2600);
 </script>
 
 <script>
 const track=document.querySelector('.track');
 const scene=document.querySelector('.scene');
 const engine=document.querySelector('.engine');
+let running=false,sleeperPhase=0,runFrame=0,lastRunTime=null;
+let renderSleepers=()=>{};
+const wheels=[...document.querySelectorAll('.wheel.w1,.wheel.w3')];
+function runTrack(time){
+  if(!running) return;
+  if(lastRunTime!==null){sleeperPhase=(sleeperPhase+Math.min(time-lastRunTime,100)*.0015)%1;}
+  lastRunTime=time;
+  renderSleepers();
+  runFrame=requestAnimationFrame(runTrack);
+}
+function toggleRunning(){
+  running=!running;
+  wheels.forEach(wheel=>wheel.setAttribute('aria-pressed',String(running)));
+  if(running){lastRunTime=null;runFrame=requestAnimationFrame(runTrack);}
+  else{cancelAnimationFrame(runFrame);lastRunTime=null;}
+}
+for(const wheel of wheels){
+  wheel.addEventListener('click',()=>{if(Date.now()>=touchClickBlockedUntil) toggleRunning()});
+  wheel.addEventListener('keydown',event=>{
+    if(event.key==='Enter'||event.key===' '){event.preventDefault();if(!event.repeat) toggleRunning()}
+  });
+}
+
 function drawTrack(){
   const frame=scene.getBoundingClientRect();
   const left=document.querySelector('.wheel.w1').getBoundingClientRect();
@@ -193,25 +217,31 @@ function drawTrack(){
   const railWidth=left.width*.32;
   track.setAttribute('viewBox',`0 0 ${width} ${height}`);
   track.replaceChildren();
-  function polygon(points,fill){
+  function polygon(points,fill,parent=track){
     const shape=document.createElementNS('http://www.w3.org/2000/svg','polygon');
     shape.setAttribute('points',points.map(p=>p.join(',')).join(' '));
     shape.setAttribute('fill',fill);
-    track.append(shape);
+    parent.append(shape);
   }
   const outerLeft=vanishX+(contactLeft-vanishX)*1.6;
   const outerRight=vanishX+(contactRight-vanishX)*1.6;
   polygon([[vanishX,horizon],[project(outerRight,height),height],
     [project(outerLeft,height),height]],'#a7a18b');
-  for(let i=30;i>=0;i--){
-    const scale=Math.pow(.82,i),y=horizon+depth*scale;
-    const thickness=Math.max(.5,12*scale*scale);
-    const x1=vanishX+(contactLeft-vanishX)*1.4;
-    const x2=vanishX+(contactRight-vanishX)*1.4;
-    polygon([[project(x1,y-thickness),y-thickness],
-      [project(x2,y-thickness),y-thickness],[project(x2,y),y],
-      [project(x1,y),y]],'#655044');
-  }
+  const sleepers=document.createElementNS('http://www.w3.org/2000/svg','g');
+  track.append(sleepers);
+  renderSleepers=()=>{
+    sleepers.replaceChildren();
+    for(let i=30;i>=0;i--){
+      const scale=Math.pow(.82,i+sleeperPhase),y=horizon+depth*scale;
+      const thickness=Math.max(.5,12*scale*scale);
+      const x1=vanishX+(contactLeft-vanishX)*1.4;
+      const x2=vanishX+(contactRight-vanishX)*1.4;
+      polygon([[project(x1,y-thickness),y-thickness],
+        [project(x2,y-thickness),y-thickness],[project(x2,y),y],
+        [project(x1,y),y]],'#655044',sleepers);
+    }
+  };
+  renderSleepers();
   for(const x of [contactLeft,contactRight]){
     polygon([[vanishX,horizon],[project(x+railWidth/2,height),height],
       [project(x-railWidth/2,height),height]],'#4b5358');
@@ -228,6 +258,7 @@ drawTrack();
 const chimney=document.querySelector('.chimney');
 const smoke=document.querySelector('.smoke');
 let smokeTimer;
+let touchClickBlockedUntil=0;
 function emitSmoke(){
   clearTimeout(smokeTimer);
   smoke.replaceChildren();
@@ -244,13 +275,57 @@ function emitSmoke(){
   }
   smokeTimer=setTimeout(()=>smoke.replaceChildren(),1000);
 }
-chimney.addEventListener('click',emitSmoke);
+chimney.addEventListener('click',()=>{
+  if(Date.now()>=touchClickBlockedUntil) emitSmoke();
+});
 chimney.addEventListener('keydown',event=>{
   if(event.key==='Enter'||event.key===' '){
     event.preventDefault();
     if(!event.repeat) emitSmoke();
   }
 });
+</script>
+
+<script>
+// Cancel browser zoom gestures while preserving the scene's touch interactions.
+const touchOptions={passive:false,capture:true};
+const preventZoom=event=>{if(event.cancelable) event.preventDefault()};
+for(const type of ['gesturestart','gesturechange','gestureend']){
+  document.addEventListener(type,preventZoom,touchOptions);
+}
+let sceneTouch=null;
+document.addEventListener('touchstart',event=>{
+  preventZoom(event);
+  if(event.touches.length!==1){sceneTouch=null;return}
+  const touch=event.touches[0];
+  sceneTouch={id:touch.identifier,x:touch.clientX,y:touch.clientY,
+    chimney:event.target instanceof Element && !!event.target.closest('.chimney'),
+    wheel:event.target instanceof Element && !!event.target.closest('.wheel'),moved:false};
+  aim(touch.clientX,touch.clientY,true);
+},touchOptions);
+document.addEventListener('touchmove',event=>{
+  preventZoom(event);
+  if(event.touches.length!==1){sceneTouch=null;return}
+  const touch=event.touches[0];
+  if(sceneTouch && Math.hypot(touch.clientX-sceneTouch.x,touch.clientY-sceneTouch.y)>12){
+    sceneTouch.moved=true;
+  }
+},touchOptions);
+document.addEventListener('touchend',event=>{
+  preventZoom(event);
+  touchClickBlockedUntil=Date.now()+700;
+  const touch=sceneTouch && [...event.changedTouches].find(t=>t.identifier===sceneTouch.id);
+  if(touch && !event.touches.length && !sceneTouch.moved &&
+    Math.hypot(touch.clientX-sceneTouch.x,touch.clientY-sceneTouch.y)<=12){
+    if(sceneTouch.chimney) emitSmoke();
+    else if(sceneTouch.wheel) toggleRunning();
+  }
+  sceneTouch=null;
+},touchOptions);
+document.addEventListener('touchcancel',event=>{
+  preventZoom(event);
+  sceneTouch=null;
+},touchOptions);
 </script>
 </body>
 </html>
